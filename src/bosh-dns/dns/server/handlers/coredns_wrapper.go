@@ -10,11 +10,13 @@ type corednsHandlerWrapper struct {
 }
 
 type requestContext struct {
+	fromCache   bool
 	withMetrics bool
 }
 
 func (w corednsHandlerWrapper) ServeDNS(ctx context.Context, writer dns.ResponseWriter, m *dns.Msg) (int, error) {
-	reqContext := ctx.Value("indicator").(*reqContext)
+	reqContext := ctx.Value("indicator").(*requestContext)
+	reqContext.fromCache = false
 	reqContext.withMetrics = false
 
 	w.Next.ServeDNS(writer, m)
