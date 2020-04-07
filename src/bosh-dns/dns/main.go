@@ -22,6 +22,7 @@ import (
 	"bosh-dns/dns/server/aliases"
 	"bosh-dns/dns/server/handlers"
 	"bosh-dns/dns/server/healthiness"
+	"bosh-dns/dns/server/monitoring"
 	"bosh-dns/dns/server/records"
 	"bosh-dns/dns/server/records/dnsresolver"
 	"bosh-dns/dns/shuffle"
@@ -188,11 +189,19 @@ func mainExitCode() int {
 		}
 	}
 
-	if config.Cache.Enabled {
-		mux.Handle(".", handlers.NewCachingDNSHandler(forwardHandler, truncater, clock, logger))
-	} else {
-		mux.Handle(".", forwardHandler)
+	var (
+		nextHandler   dns.Handler = forwardHandler
+		metricsServer *monitoring.MetricsServer
+	)
+	if config.Metrics.Enabled {
+		metricsAddr := fmt.Sprintf("127.0.0.1:%d", config.Metrics.Port)
+		metricsServer = monitoring.NewMetricsServer(logger, metricsAddr)
+		nextHandler = handlers.NewMetricsDNSHandler(nextHandler, logger, metricsServer.Metrics)
 	}
+	if config.Cache.Enabled {
+		nextHandler = handlers.NewCachingDNSHandler(nextHandler, truncater, clock, logger)
+	}
+	mux.Handle(".", nextHandler)
 
 	servers := []server.DNSServer{}
 	numListeners := runtime.NumCPU()
@@ -226,6 +235,10 @@ func mainExitCode() int {
 			logger.Error(logTag, fmt.Sprintf("could not start handler registrar: %s", err.Error()))
 		}
 	}()
+
+	if metricsServer != nil {
+		go metricsServer.Run(shutdown)
+	}
 
 	go healthWatcher.Run(shutdown)
 

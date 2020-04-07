@@ -14,8 +14,7 @@ type MetricsDNSHandler struct {
 	logTag  string
 }
 
-func NewMetricsDNSHandler(next dns.Handler, logger boshlog.Logger, listenAddress string) MetricsDNSHandler {
-	m := metrics.New(listenAddress)
+func NewMetricsDNSHandler(next dns.Handler, logger boshlog.Logger, m *metrics.Metrics) MetricsDNSHandler {
 	m.Next = corednsHandlerWrapper{Next: next}
 	return MetricsDNSHandler{
 		Metrics: m,
@@ -34,8 +33,4 @@ func (m MetricsDNSHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if err != nil {
 		m.logger.Error(m.logTag, "Error getting dns metrics:", err.Error())
 	}
-}
-
-func (m MetricsDNSHandler) Run() error {
-	return m.Metrics.OnStartup()
 }

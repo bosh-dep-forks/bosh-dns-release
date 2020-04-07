@@ -20,13 +20,15 @@ var _ bool = Describe("metricsHandler", func() {
 		fakeDnsHandler *handlersfakes.FakeDNSHandler
 		fakeLogger     *loggerfakes.FakeLogger
 		response       *dns.Msg
+		fakeMetrics    *metrics.Metrics
 	)
 
 	BeforeEach(func() {
 		fakeDnsHandler = &handlersfakes.FakeDNSHandler{}
 		fakeWriter = &internalfakes.FakeResponseWriter{}
 		fakeLogger = &loggerfakes.FakeLogger{}
-		metricsHandler = handlers.NewMetricsDNSHandler(fakeDnsHandler, fakeLogger, "127.0.0.1:53088")
+		fakeMetrics = metrics.New("127.0.0.1:53088")
+		metricsHandler = handlers.NewMetricsDNSHandler(fakeDnsHandler, fakeLogger, fakeMetrics)
 
 		response = &dns.Msg{
 			Answer: []dns.RR{&dns.A{A: net.ParseIP("99.99.99.99")}},

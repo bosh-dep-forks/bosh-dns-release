@@ -111,6 +111,7 @@ var _ = Describe("main", func() {
 			cmd                 *exec.Cmd
 			handlersDir         string
 			healthEnabled       bool
+			metricsEnabled      bool
 			httpJSONServer      *ghttp.Server
 			recordsFilePath     string
 			session             *gexec.Session
@@ -170,6 +171,7 @@ var _ = Describe("main", func() {
 			}`
 
 			healthEnabled = true
+			metricsEnabled = false
 			recursorList = []string{}
 		})
 
@@ -226,7 +228,7 @@ var _ = Describe("main", func() {
 				"api/assets/test_certs/test_ca.pem",
 				"api/assets/test_certs/test_wrong_cn_client.pem",
 				"api/assets/test_certs/test_client.key",
-				1 * time.Second,
+				1*time.Second,
 				logger,
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -256,6 +258,11 @@ var _ = Describe("main", func() {
 				CertificateFile: "../healthcheck/assets/test_certs/test_client.pem",
 				PrivateKeyFile:  "../healthcheck/assets/test_certs/test_client.key",
 				CheckInterval:   config.DurationJSON(checkInterval),
+			}
+
+			cfg.Metrics = config.MetricsConfig{
+				Enabled: metricsEnabled,
+				Port:    53088 + ginkgoconfig.GinkgoConfig.ParallelNode,
 			}
 
 			cmd = newCommandWithConfig(cfg)
@@ -600,6 +607,32 @@ var _ = Describe("main", func() {
 					})
 				})
 
+				FContext("with Metrics enabled", func() {
+					BeforeEach(func() {
+						metricsEnabled = true
+					})
+
+					It("starts the metrics server and collects metrics for internal resolutions", func() {
+						c := &dns.Client{Net: "tcp"}
+
+						m := &dns.Msg{}
+
+						m.SetQuestion("app-id.internal-domain.", dns.TypeANY)
+						_, _, err := c.Exchange(m, fmt.Sprintf("%s:%d", listenAddress, listenPort))
+						Expect(err).NotTo(HaveOccurred())
+
+						resp, err := http.Get(fmt.Sprintf("http://%s:%d/metrics", listenAddress, 53088+ginkgoconfig.GinkgoConfig.ParallelNode))
+						Expect(err).NotTo(HaveOccurred())
+
+						metrics, err := ioutil.ReadAll(resp.Body)
+						Expect(err).NotTo(HaveOccurred())
+						defer resp.Body.Close()
+
+						Expect(resp.StatusCode).To(Equal(http.StatusOK))
+						Expect(string(metrics)).To(MatchRegexp("coredns_dns_request_type_count_total{server=\"\",type=\"ANY\",zone=\".\"} 1"))
+					})
+				})
+
 				Context("with Health disabled", func() {
 					BeforeEach(func() {
 						healthEnabled = false
@@ -840,7 +873,6 @@ var _ = Describe("main", func() {
 
 				It("responds with a success rcode on the main listen address", func() {
 					r, _, err := c.Exchange(m, fmt.Sprintf("%s:%d", listenAddress, listenPort))
-
 
 					Expect(err).NotTo(HaveOccurred())
 					Expect(r.Rcode).To(Equal(dns.RcodeSuccess))
